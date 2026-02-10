@@ -1,0 +1,25 @@
+spring:
+  application:
+    name: chatbot_rag
+  ai:
+    bedrock:
+      aws:
+        region: us-east-1
+        access-key: ${AWS_ACCESS_KEY_ID}
+        secret-key: ${AWS_SECRET_ACCESS_KEY}
+      converse:
+        chat:
+          options:
+            model: anthropic.claude-3-sonnet-20240229-v1:0
+    vectorstore:
+      pgvector:
+        initialize-schema: true
+        dimensions: 1536
+  datasource:
+    url: jdbc:postgresql://localhost:5432/public
+    username: postgres
+    password: postgres
+  autoconfigure:
+    exclude:
+      - org.springframework.ai.model.bedrock.cohere.autoconfigure.BedrockCohereEmbeddingAutoConfiguration
+      - org.springframework.ai.autoconfigure.bedrock.titan.BedrockTitanEmbeddingAutoConfiguration
