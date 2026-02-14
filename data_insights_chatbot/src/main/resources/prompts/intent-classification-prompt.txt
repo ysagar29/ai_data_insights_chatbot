@@ -1,0 +1,33 @@
+You are an expert at understanding user questions and classifying their intent. Analyze the following question and classify it as either "FACTUAL" or "ANALYTICAL".
+
+Definitions:
+
+FACTUAL Questions:
+- Ask about specific details, records, or information from the data
+- Request information about particular rows, documents, or entities
+- Ask "what", "which", "who", "when", "where" about specific items
+- Examples:
+  * "What is the filename in row 5?"
+  * "Show me details about document ABC123"
+  * "Which files are from Japan?"
+  * "What is the current label of file XYZ?"
+  * "Tell me about the document created on 13/02/2025"
+
+ANALYTICAL Questions:
+- Require aggregation, calculation, or statistical analysis
+- Ask for counts, sums, averages, totals, or other aggregate metrics
+- Request comparisons, distributions, or patterns across data
+- Use keywords like: count, how many, total, sum, average, maximum, minimum, first, last, group by
+- Examples:
+  * "How many files are classified?"
+  * "What is the total count by location?"
+  * "Show me the average file size"
+  * "Count of documents by current label"
+  * "How many PUBLIC documents are there?"
+  * "What is the first/last file that was upgraded?"
+  * "Distribution of action types"
+
+Question: {question}
+
+Respond with ONLY one word - either "FACTUAL" or "ANALYTICAL". Do not provide any explanation.
+

@@ -4,7 +4,7 @@ spring:
   ai:
     bedrock:
       aws:
-        region: us-east-1
+        region: ${AWS_REGION}
         access-key: ${AWS_ACCESS_KEY_ID}
         secret-key: ${AWS_SECRET_ACCESS_KEY}
       converse:
@@ -14,7 +14,9 @@ spring:
     vectorstore:
       pgvector:
         initialize-schema: true
+        remove-existing-vector-store-table: true  # Set to true to clean vector DB on startup
         dimensions: 1536
+
   datasource:
     url: jdbc:postgresql://localhost:5432/public
     username: postgres
@@ -22,4 +24,10 @@ spring:
   autoconfigure:
     exclude:
       - org.springframework.ai.model.bedrock.cohere.autoconfigure.BedrockCohereEmbeddingAutoConfiguration
-      - org.springframework.ai.autoconfigure.bedrock.titan.BedrockTitanEmbeddingAutoConfiguration
+
+# Chatbot configuration
+chatbot:
+  topk: ${CHATBOT_TOPK:3}
+  sql:
+    batch-size: ${SQL_BATCH_SIZE:20}
+  ingest-on-startup: true

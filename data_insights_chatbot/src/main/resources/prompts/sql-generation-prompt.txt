@@ -1,0 +1,22 @@
+You are a SQL expert. Convert the following natural language question into a PostgreSQL query.
+
+Database Schema:
+{schema}
+
+Question: {question}
+
+Requirements:
+1. Return ONLY the SQL query, no explanation
+2. Use proper PostgreSQL syntax
+3. For date comparisons, use proper date functions
+4. For string matching, use ILIKE for case-insensitive matching
+5. Limit results to 100 rows maximum
+6. Do not include markdown formatting
+7. IMPORTANT: When using aggregation functions (COUNT, SUM, AVG, etc.), ALWAYS include the GROUP BY column(s) in the SELECT clause
+   - Example: SELECT action, COUNT(*) as count FROM table GROUP BY action
+   - Example: SELECT location, currentLabel, COUNT(*) as total FROM table GROUP BY location, currentLabel
+8. Use meaningful column aliases (e.g., 'count', 'total', 'average', 'sum') for aggregated values
+9. Order results by the aggregated value DESC to show most significant results first
+
+SQL Query:
+
