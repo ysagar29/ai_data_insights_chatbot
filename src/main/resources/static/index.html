@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>RAG Chatbot</title>
+
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+
+        .chat-container {
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            width: 100%;
+            max-width: 900px;
+            height: 650px;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .chat-header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 18px;
+            text-align: center;
+            font-size: 22px;
+            font-weight: 600;
+        }
+
+        .chat-messages {
+            flex: 1;
+            padding: 20px;
+            overflow-y: auto;
+            background: #f4f6fb;
+        }
+
+        .message {
+            margin-bottom: 18px;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .message.user {
+            align-items: flex-end;
+        }
+
+        .message.bot {
+            align-items: flex-start;
+        }
+
+        .message-content {
+            max-width: 75%;
+            padding: 14px 18px;
+            border-radius: 16px;
+            word-wrap: break-word;
+            font-size: 14px;
+        }
+
+        .message.user .message-content {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        .message.bot .message-content {
+            background: #ffffff;
+            color: #333;
+            border: 1px solid #e2e4ea;
+        }
+
+        .message-sources {
+            font-size: 12px;
+            color: #555;
+            margin-top: 6px;
+            padding: 6px 10px;
+            background: #fff;
+            border-radius: 10px;
+            border: 1px solid #e0e0e0;
+        }
+
+        .chat-input-container {
+            padding: 16px;
+            background: white;
+            border-top: 1px solid #ddd;
+            display: flex;
+            gap: 10px;
+        }
+
+        .chat-input {
+            flex: 1;
+            padding: 12px 16px;
+            border: 2px solid #ddd;
+            border-radius: 24px;
+            font-size: 14px;
+            outline: none;
+        }
+
+        .chat-input:focus {
+            border-color: #667eea;
+        }
+
+        .send-button {
+            padding: 12px 28px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 24px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 600;
+        }
+
+        .send-button:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
+        /* ===== AI RESPONSE FORMATTING ===== */
+
+        .ai-response h3 {
+            margin: 14px 0 8px;
+            font-size: 1.05em;
+            font-weight: 600;
+            color: #222;
+        }
+
+        .ai-response p {
+            margin-bottom: 10px;
+            line-height: 1.6;
+        }
+
+        .ai-response ul {
+            margin: 8px 0 12px 22px;
+        }
+
+        .ai-response li {
+            margin-bottom: 6px;
+            line-height: 1.5;
+        }
+
+        /* ===== LOADING ===== */
+
+        .loading {
+            display: flex;
+            gap: 6px;
+            padding: 6px;
+        }
+
+        .loading span {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #667eea;
+            animation: bounce 1.4s infinite ease-in-out both;
+        }
+
+        .loading span:nth-child(1) { animation-delay: -0.32s; }
+        .loading span:nth-child(2) { animation-delay: -0.16s; }
+
+        @keyframes bounce {
+            0%, 80%, 100% { transform: scale(0); }
+            40% { transform: scale(1); }
+        }
+    </style>
+</head>
+
+<body>
+<div class="chat-container">
+    <div class="chat-header">🤖 RAG Chatbot – Data Insight Assistant</div>
+
+    <div class="chat-messages" id="chatMessages">
+        <div class="message bot">
+            <div class="message-content">
+                Hello! Ask me questions about your ingested data.
+            </div>
+        </div>
+    </div>
+
+    <div class="chat-input-container">
+        <input
+                type="text"
+                class="chat-input"
+                id="chatInput"
+                placeholder="Ask a question…"
+                onkeypress="handleKeyPress(event)"
+        />
+        <button class="send-button" id="sendButton" onclick="sendMessage()">
+            Send
+        </button>
+    </div>
+</div>
+
+<script>
+    const API_URL = "http://localhost:8080/api/chat";
+
+    function addMessage(content, isUser, sources = null, documentsUsed = null) {
+        const container = document.getElementById("chatMessages");
+        const msg = document.createElement("div");
+        msg.className = `message ${isUser ? "user" : "bot"}`;
+
+        const contentDiv = document.createElement("div");
+        contentDiv.className = "message-content";
+
+        contentDiv.innerHTML = isUser
+            ? escapeHtml(content)
+            : formatContent(content);
+
+        msg.appendChild(contentDiv);
+
+        if (sources && sources.length) {
+            const src = document.createElement("div");
+            src.className = "message-sources";
+            src.innerHTML = `<strong>📚 Sources:</strong> ${sources.join(", ")} (${documentsUsed})`;
+            msg.appendChild(src);
+        }
+
+        container.appendChild(msg);
+        container.scrollTop = container.scrollHeight;
+    }
+
+    function escapeHtml(text) {
+        return text
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;");
+    }
+
+    function formatContent(content) {
+        let text = escapeHtml(content);
+
+        // Markdown-style headings
+        text = text.replace(/\*\*(.+?)\*\*/g, "<h3>$1</h3>");
+
+        // Bullet points
+        text = text.replace(/^[•\-]\s+(.*)$/gm, "<li>$1</li>");
+        text = text.replace(/(<li>.*<\/li>)/gs, "<ul>$1</ul>");
+
+        // Paragraphs
+        text = text.replace(/\n{2,}/g, "</p><p>");
+        text = text.replace(/\n/g, "<br>");
+
+        return `<div class="ai-response"><p>${text}</p></div>`;
+    }
+
+    function showLoading() {
+        const container = document.getElementById("chatMessages");
+        const div = document.createElement("div");
+        div.id = "loading";
+        div.className = "message bot";
+        div.innerHTML = `
+            <div class="message-content">
+                <div class="loading">
+                    <span></span><span></span><span></span>
+                </div>
+            </div>`;
+        container.appendChild(div);
+        container.scrollTop = container.scrollHeight;
+    }
+
+    function hideLoading() {
+        document.getElementById("loading")?.remove();
+    }
+
+    async function sendMessage() {
+        const input = document.getElementById("chatInput");
+        const btn = document.getElementById("sendButton");
+        const question = input.value.trim();
+        if (!question) return;
+
+        input.disabled = btn.disabled = true;
+        addMessage(question, true);
+        input.value = "";
+        showLoading();
+
+        try {
+            const res = await fetch(API_URL, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ question })
+            });
+
+            const data = await res.json();
+            hideLoading();
+            addMessage(data.answer || "No response", false, data.sources, data.documentsUsed);
+        } catch {
+            hideLoading();
+            addMessage("Server error. Please try again.", false);
+        } finally {
+            input.disabled = btn.disabled = false;
+            input.focus();
+        }
+    }
+
+    function handleKeyPress(e) {
+        if (e.key === "Enter") sendMessage();
+    }
+
+    document.getElementById("chatInput").focus();
+</script>
+</body>
+</html>
