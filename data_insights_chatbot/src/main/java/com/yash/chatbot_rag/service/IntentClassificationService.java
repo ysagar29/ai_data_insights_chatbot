@@ -40,12 +40,12 @@ public class IntentClassificationService {
             } else if (response.contains("FACTUAL")) {
                 return QueryIntent.FACTUAL;
             } else {
-                log.warn("Unable to parse intent from LLM response: {}. Defaulting to FACTUAL", response);
-                return QueryIntent.FACTUAL; // Default to factual if unclear
+                log.warn("Unable to parse intent from LLM response: {}. Defaulting to NONE", response);
+                return QueryIntent.NONE; // Default to factual if unclear
             }
         } catch (Exception e) {
-            log.error("Error classifying intent, defaulting to FACTUAL", e);
-            return QueryIntent.FACTUAL; // Default to factual on error
+            log.error("Error classifying intent, defaulting to NONE", e);
+            return QueryIntent.NONE; // Default to factual on error
         }
     }
 }

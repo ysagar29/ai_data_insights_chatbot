@@ -41,7 +41,7 @@ public class CsvDataLoader implements CommandLineRunner {
     @Autowired
     private CsvLoaderProperties csvLoaderProperties;
 
-    @Value("${SQL_BATCH_SIZE:10}")
+    @Value("${chatbot.sql.batch-size:20}")
     private int sqlBatchSize;
 
     @Override

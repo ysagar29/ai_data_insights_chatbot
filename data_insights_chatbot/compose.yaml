@@ -9,3 +9,19 @@ services:
       - "org.springframework.boot.service-connection=postgres"
     ports:
       - '5432:5432'
+
+  chatbot-app:
+    build: .
+    container_name: chatbot-app
+    depends_on:
+      - pgvector
+    environment:
+      - SPRING_DATASOURCE_URL=jdbc:postgresql://pgvector:5432/postgres
+      - SPRING_DATASOURCE_USERNAME=postgres
+      - SPRING_DATASOURCE_PASSWORD=postgres
+      - AWS_REGION=${AWS_REGION}
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+    ports:
+      - '8080:8080'
+    restart: unless-stopped

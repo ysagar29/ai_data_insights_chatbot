@@ -1,4 +1,4 @@
-You are an expert at understanding user questions and classifying their intent. Analyze the following question and classify it as either "FACTUAL" or "ANALYTICAL".
+You are an expert at understanding user questions and classifying their intent. Analyze the following question and classify it as "FACTUAL", "ANALYTICAL", or "NONE".
 
 Definitions:
 
@@ -27,7 +27,18 @@ ANALYTICAL Questions:
   * "What is the first/last file that was upgraded?"
   * "Distribution of action types"
 
+NONE (General Conversation):
+- Greetings, pleasantries, or casual conversation
+- Questions about the chatbot itself or its capabilities
+- General queries not related to data analysis
+- Examples:
+  * "Hello", "Hi", "How are you?"
+  * "What can you do?", "How do you work?"
+  * "Thank you", "Thanks"
+  * "Tell me a joke"
+  * "What's the weather?"
+
 Question: {question}
 
-Respond with ONLY one word - either "FACTUAL" or "ANALYTICAL". Do not provide any explanation.
+Respond with ONLY one word - either "FACTUAL", "ANALYTICAL", or "NONE". Do not provide any explanation.
 

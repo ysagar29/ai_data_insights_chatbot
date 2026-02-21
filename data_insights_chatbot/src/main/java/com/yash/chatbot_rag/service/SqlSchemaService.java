@@ -2,14 +2,10 @@ package com.yash.chatbot_rag.service;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.ai.chat.model.ChatModel;
-import org.springframework.ai.chat.prompt.Prompt;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.core.io.Resource;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 
-import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
@@ -18,43 +14,35 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class SqlSchemaService {
 
-    private final ChatModel chatModel;
     private final JdbcTemplate jdbcTemplate;
 
-    @Value("classpath:/prompts/schema-generation-prompt.txt")
-    private Resource schemaPromptResource;
-
-    @Value("classpath:/prompts/insert-generation-prompt.txt")
-    private Resource insertPromptResource;
-
     /**
-     * Generate SQL table schema from CSV headers using LLM
+     * Generate SQL table schema directly from CSV headers and sample data
      */
     public String generateSchema(String tableName, List<String> headers, List<Map<String, String>> sampleData) {
         try {
-            String promptTemplate = new String(schemaPromptResource.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
+            log.info("Generating schema for table: {}", tableName);
 
-            // Format sample data for context
-            StringBuilder sampleDataStr = new StringBuilder();
-            int count = 0;
-            for (Map<String, String> row : sampleData) {
-                if (count++ >= 5) break; // Only first 5 rows as sample
-                sampleDataStr.append(row.toString()).append("\n");
+            StringBuilder schema = new StringBuilder();
+            schema.append("CREATE TABLE ").append(tableName).append(" (\n");
+            schema.append("  id SERIAL PRIMARY KEY,\n");
+
+            for (int i = 0; i < headers.size(); i++) {
+                String header = headers.get(i);
+                String columnName = sanitizeColumnName(header);
+                String dataType = inferDataType(header, sampleData);
+
+                schema.append("  ").append(columnName).append(" ").append(dataType);
+                if (i < headers.size() - 1) {
+                    schema.append(",");
+                }
+                schema.append("\n");
             }
 
-            String prompt = promptTemplate
-                    .replace("{tableName}", tableName)
-                    .replace("{headers}", String.join(", ", headers))
-                    .replace("{sampleData}", sampleDataStr.toString());
-
-            log.info("Generating schema for table: {}", tableName);
-            String schema = chatModel.call(new Prompt(prompt)).getResult().getOutput().getText();
-
-            // Extract SQL from response (remove markdown if present)
-            schema = extractSql(schema);
+            schema.append(")");
 
             log.info("Generated schema: {}", schema);
-            return schema;
+            return schema.toString();
         } catch (Exception e) {
             log.error("Error generating schema", e);
             throw new RuntimeException("Failed to generate schema", e);
@@ -62,22 +50,27 @@ public class SqlSchemaService {
     }
 
     /**
-     * Generate SQL INSERT statement from data using LLM
+     * Generate SQL INSERT statement directly from data
      */
     public String generateInsertQuery(String tableName, Map<String, String> data, String tableSchema) {
         try {
-            String promptTemplate = new String(insertPromptResource.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
+            List<String> columns = new ArrayList<>();
+            List<String> values = new ArrayList<>();
 
-            String prompt = promptTemplate
-                    .replace("{tableName}", tableName)
-                    .replace("{tableSchema}", tableSchema)
-                    .replace("{data}", data.toString());
+            for (Map.Entry<String, String> entry : data.entrySet()) {
+                String columnName = sanitizeColumnName(entry.getKey());
+                String value = entry.getValue();
 
-            log.debug("Generating INSERT query for table: {}", tableName);
-            String insertQuery = chatModel.call(new Prompt(prompt)).getResult().getOutput().getText();
+                columns.add(columnName);
+                values.add(escapeSqlValue(value));
+            }
 
-            // Extract SQL from response
-            insertQuery = extractSql(insertQuery);
+            String insertQuery = String.format(
+                "INSERT INTO %s (%s) VALUES (%s)",
+                tableName,
+                String.join(", ", columns),
+                String.join(", ", values)
+            );
 
             log.debug("Generated INSERT query: {}", insertQuery);
             return insertQuery;
@@ -85,6 +78,121 @@ public class SqlSchemaService {
             log.error("Error generating INSERT query", e);
             throw new RuntimeException("Failed to generate INSERT query", e);
         }
+    }
+
+    /**
+     * Sanitize column name for SQL (remove spaces, special chars)
+     */
+    private String sanitizeColumnName(String columnName) {
+        return columnName.toLowerCase()
+                .replaceAll("[^a-z0-9_]", "_")
+                .replaceAll("^_+|_+$", ""); // trim leading/trailing underscores
+    }
+
+    /**
+     * Infer SQL data type from column name and sample data
+     */
+    private String inferDataType(String header, List<Map<String, String>> sampleData) {
+        // Check sample data values for this column
+        for (Map<String, String> row : sampleData) {
+            String value = row.get(header);
+            if (value == null || value.isBlank()) {
+                continue;
+            }
+
+            // Try to infer type from value
+            if (isInteger(value)) {
+                return "INTEGER";
+            } else if (isDouble(value)) {
+                return "DOUBLE PRECISION";
+            } else if (isBoolean(value)) {
+                return "BOOLEAN";
+            } else if (isDate(value)) {
+                return "TIMESTAMP";
+            }
+        }
+
+        // Default to TEXT for strings
+        return "TEXT";
+    }
+
+    private boolean isInteger(String value) {
+        try {
+            Long.parseLong(value);
+            return true;
+        } catch (NumberFormatException e) {
+            return false;
+        }
+    }
+
+    private boolean isDouble(String value) {
+        try {
+            Double.parseDouble(value);
+            return value.contains(".");
+        } catch (NumberFormatException e) {
+            return false;
+        }
+    }
+
+    private boolean isBoolean(String value) {
+        return value.equalsIgnoreCase("true") || value.equalsIgnoreCase("false");
+    }
+
+    private boolean isDate(String value) {
+        // Simple check for ISO date format or common date patterns
+        return value.matches("\\d{4}-\\d{2}-\\d{2}.*") ||
+               value.matches("\\d{2}/\\d{2}/\\d{4}.*");
+    }
+
+    /**
+     * Convert date from DD/MM/YYYY to YYYY-MM-DD format
+     */
+    private String convertDateFormat(String dateValue) {
+        try {
+            // Handle DD/MM/YYYY format
+            if (dateValue.matches("\\d{2}/\\d{2}/\\d{4}.*")) {
+                String[] parts = dateValue.split("/");
+                if (parts.length >= 3) {
+                    String day = parts[0];
+                    String month = parts[1];
+                    String year = parts[2].substring(0, 4); // Handle timestamps
+                    return year + "-" + month + "-" + day;
+                }
+            }
+            // Already in YYYY-MM-DD format
+            return dateValue;
+        } catch (Exception e) {
+            log.warn("Failed to convert date format: {}", dateValue);
+            return dateValue;
+        }
+    }
+
+    /**
+     * Escape SQL value for INSERT statement
+     */
+    private String escapeSqlValue(String value) {
+        if (value == null || value.isBlank()) {
+            return "NULL";
+        }
+
+        // Check if it's a number
+        if (isInteger(value) || isDouble(value)) {
+            return value;
+        }
+
+        // Check if it's a boolean
+        if (isBoolean(value)) {
+            return value.toUpperCase();
+        }
+
+        // Check if it's a date and convert format
+        if (isDate(value)) {
+            String convertedDate = convertDateFormat(value);
+            return "'" + convertedDate + "'";
+        }
+
+        // Escape single quotes and wrap in quotes for strings
+        return "'" + value.replace("'", "''") + "'";
     }
 
     /**
@@ -128,7 +236,7 @@ public class SqlSchemaService {
     }
 
     /**
-     * Generate data summary using LLM
+     * Generate data summary
      */
     public String generateDataSummary(String tableName) {
         try {
@@ -137,7 +245,7 @@ public class SqlSchemaService {
             Integer totalRows = jdbcTemplate.queryForObject(countSql, Integer.class);
 
             // Get column names
-            String columnSql = "SELECT column_name, data_type FROM information_schema.columns WHERE table_name = ?";
+            String columnSql = "SELECT column_name, data_type FROM information_schema.columns WHERE table_name = ? ORDER BY ordinal_position";
             List<Map<String, Object>> columns = jdbcTemplate.queryForList(columnSql, tableName.toLowerCase());
 
             // Sample data
@@ -162,20 +270,6 @@ public class SqlSchemaService {
             log.error("Error generating data summary", e);
             return "Unable to generate summary: " + e.getMessage();
         }
-    }
-
-    /**
-     * Extract SQL from LLM response (remove markdown code blocks)
-     */
-    private String extractSql(String response) {
-        if (response == null) return "";
-
-        // Remove markdown code blocks
-        response = response.replaceAll("```sql\\n?", "");
-        response = response.replaceAll("```\\n?", "");
-        response = response.trim();
-
-        return response;
     }
 
     /**

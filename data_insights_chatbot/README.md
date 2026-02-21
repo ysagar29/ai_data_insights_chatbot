@@ -1,159 +1,304 @@
-# RAG Chatbot with Vector Search and Analytical SQL
+# AI Data Insights Chatbot
 
-## Sample Questions to Ask the Chatbot
+An intelligent RAG chatbot that answers questions about your CSV data using vector search for factual queries and SQL for analytical aggregations.
 
-You can try asking the chatbot questions like:
+## What Does It Do?
 
-- How many unique locations are there in the data?
-- What is the average file size for records with the 'PUBLIC' label?
-- Which file extension is most common for records with the 'INTERNAL' label?
-- How many records were created in 2025 for each action type?
+This chatbot automatically:
+1. **Classifies your question** into one of three types:
+   - **FACTUAL**: "Tell me about the document created on 14/10/2025 ?" → Searches vector embeddings
+   - **ANALYTICAL**: "How many files are PUBLIC?" → Runs SQL aggregations
+   - **GENERAL**: "Hello!" → Casual conversation
+2. **Retrieves relevant data** from the appropriate source (Vector DB or SQL DB)
+3. **Generates natural language answers** using AWS Bedrock Claude 3 Sonnet
 
-## Overview
+## How Does It Work?
 
-This application implements a Retrieval-Augmented Generation (RAG) chatbot that supports both factual and analytical (aggregated/SQL) queries using:
-- **Vector Database**: PostgreSQL with pgvector extension
-- **Embeddings**: AWS Bedrock Titan Embed Text v1 (1536 dimensions)
-- **LLM**: AWS Bedrock Claude 3 Sonnet
-- **Data Source**: CSV file (ingested and available for both vector and SQL queries)
+### Architecture Overview
 
-## Architecture
+![System Architecture](system_architecture.png)
 
+The system uses a dual-database approach to handle different types of queries:
+
+```
+CSV Data → Ingested into → Vector DB (embeddings) + SQL DB (structured data)
+                                    ↓
+User Question → Intent Classification → Route to Vector Search OR SQL Query
+                                    ↓
+Retrieved Data + Question → Claude 3 Sonnet → Natural Language Answer
+```
+
+### Detailed Flow
+
+![User Flow Diagram](user_flow_diagram.png)
+
+#### 1. Data Ingestion (Startup)
+```
+CSV File (data.csv)
+  ↓
+Parse CSV → Extract Headers & Rows
+  ↓
+  ├─→ Vector Store Path:
+  │   ├─ Convert each row to text format
+  │   ├─ Generate embeddings using AWS Titan
+  │   └─ Store in PostgreSQL pgvector
+  │
+  └─→ SQL Store Path:
+      ├─ Auto-generate schema from CSV headers
+      ├─ Infer data types (TEXT, INTEGER, TIMESTAMP, etc.)
+      ├─ Create table with proper types
+      ├─ Convert date formats (DD/MM/YYYY → YYYY-MM-DD)
+      └─ Batch insert all rows (configurable batch size)
+  ↓
+Generate Data Summary → Store in Vector DB
+```
+
+#### 2. Query Processing (Runtime)
 ```
 User Question
-    ↓
-Intent Classification (Factual or Analytical)
-    ↓
-If Factual: Vector Similarity Search (Top K documents)
-    ↓
-If Analytical: SQL Query Generation & Execution (with context-aware filters)
-    ↓
-Build Context from Retrieved Documents or SQL Results (with SQL query context)
-    ↓
-Send to Claude 3 Sonnet via AWS Bedrock with analytics prompt
-    ↓
-Return Answer with Sources
+  ↓
+[STEP 1] Intent Classification (using Claude via prompt)
+  ↓
+  ├─→ FACTUAL Intent:
+  │   ├─ Semantic similarity search in Vector DB
+  │   ├─ Retrieve top K similar documents (default: 3)
+  │   ├─ Extract relevant content from embeddings
+  │   └─ Send to Claude with analytics prompt
+  │
+  ├─→ ANALYTICAL Intent:
+  │   ├─ Generate SQL query from question (using Claude + SQL prompt)
+  │   ├─ Execute query on PostgreSQL
+  │   ├─ Include SQL query + column names in context
+  │   └─ Send results to Claude with analytics prompt
+  │
+  └─→ NONE Intent (General Conversation):
+      └─ Direct conversational response from Claude
+  ↓
+[STEP 2] Final Response Generation
+  ├─ Combine question + retrieved data/SQL results
+  ├─ Apply analytics-prompt.txt template
+  └─ Generate natural language answer
+  ↓
+Return: Answer + Sources + Document Count
 ```
 
-## API Endpoints
-
-### 1. Chat Endpoint
-
-**POST** `/api/chat`
-
-**Request:**
-```json
-{
-  "question": "Which action is most common for files in the 'Germany' location?"
-}
+#### 3. No Data Found Flow
+```
+Query Returns Empty Results
+  ↓
+Retrieve Data Summary from Vector DB
+  ↓
+Generate Helpful Response:
+  ├─ List available data columns
+  ├─ Show sample data structure
+  └─ Suggest example questions
 ```
 
-**Response:**
+**Key Features:**
+- Automatic schema generation from CSV headers with type inference
+- Date format conversion (DD/MM/YYYY → YYYY-MM-DD)
+- Context-aware responses (includes SQL queries in analytical answers)
+- Fallback to data summaries when no results found
+- All prompts loaded from `.txt` files (no hardcoding)
+
+## Why This Architecture?
+
+- **Vector Search**: Best for finding specific records or contextual information (semantic understanding)
+- **SQL Aggregations**: Best for counts, averages, statistics, and groupings (structured analysis)
+- **LLM Intent Classification**: Automatically routes queries to the right system (no manual intervention)
+- **Dual Storage**: Vector DB for semantic search + SQL DB for aggregations = Best of both worlds
+- **No Hardcoding**: All prompts in `.txt` files, schemas auto-generated from data (flexible & maintainable)
+- **Performance Optimized**: Direct SQL generation, layer caching, async loading
+
+### Architecture Components
+
+**Data Layer:**
+- **Vector Store (pgvector)**: Stores document embeddings for semantic similarity search
+- **SQL Database (PostgreSQL)**: Stores structured data for aggregations and analytics
+
+**AI Layer:**
+- **Intent Classifier**: Determines query type (FACTUAL/ANALYTICAL/NONE)
+- **Embedding Model**: AWS Bedrock Titan Embed Text v1 (1536 dimensions)
+- **LLM**: AWS Bedrock Claude 3 Sonnet (for SQL generation, intent classification, response generation)
+
+**Application Layer:**
+- **RagService**: Orchestrates query routing and response generation
+- **IntentClassificationService**: Classifies user intent
+- **AggregatedQueryService**: Handles SQL query generation and execution
+- **SqlSchemaService**: Auto-generates schemas and manages data insertion
+- **DataSummaryService**: Provides fallback responses when no data found
+
+For detailed architecture diagrams, see:
+- `system_architecture.png` - High-level system components
+- `user_flow_diagram.png` - Detailed query processing flow
+
+## Tech Stack
+
+| Component | Technology |
+|-----------|-----------|
+| Backend | Spring Boot 3.5.10, Java 21 |
+| Vector Store | PostgreSQL 16 + pgvector extension |
+| Embeddings | AWS Bedrock Titan Embed Text v1 (1536D) |
+| LLM | AWS Bedrock Claude 3 Sonnet |
+| Container | Docker with distroless Java 21 image |
+| Data Processing | Apache Commons CSV, JDBC |
+
+## Prerequisites
+
+- Docker & Docker Compose
+- AWS Account with Bedrock access (Claude 3 Sonnet + Titan Embeddings enabled)
+
+## Quick Start
+
+### 1. Setup Environment
+
+```bash
+# Copy sample environment file
+cp .env.example .env
+
+# Edit .env with your AWS credentials
+AWS_REGION=us-east-1
+AWS_ACCESS_KEY_ID=your_key_here
+AWS_SECRET_ACCESS_KEY=your_secret_here
+```
+
+### 2. Start Application
+
+```bash
+# Start all services
+docker compose up -d
+
+# Check logs
+docker compose logs -f chatbot-app
+
+# Stop services
+docker compose down
+```
+
+### 3. Access
+
+- **Chat UI**: http://localhost:8080
+- **API**: `POST http://localhost:8080/api/chat`
+- **Health**: `GET http://localhost:8080/api/chat/health`
+
+## Sample Questions by Intent
+
+### FACTUAL (Vector Search)
+```
+• "Tell me about the document created on 13/02/2025"
+• "What is the filename in row 5?"
+• "Show me details about files from Japan"
+• "Which files have the INTERNAL label?"
+• "What are the details of user_115's files?"
+```
+
+### ANALYTICAL (SQL Aggregation)
+```
+• "How many unique locations are there in the data?"
+• "What is the average file size for records with the 'PUBLIC' label?"
+• "Which file extension is most common for records with the 'INTERNAL' label?"
+• "How many records were created in 2025 for each action type?"
+• "Count of files by action type in Germany"
+• "Which action (DOWNGRADED, UPGRADED, or CLASSIFIED) is most common?"
+• "What is the total size of all .xlsx files?"
+• "How many files were upgraded in each location?"
+```
+
+### GENERAL CONVERSATION
+```
+• "Hello!"
+• "What can you do?"
+• "How does this work?"
+• "Thank you!"
+```
+
+## API Usage
+
+### Chat Request
+
+```bash
+curl -X POST http://localhost:8080/api/chat \
+  -H "Content-Type: application/json" \
+  -d '{"question": "How many files are classified?"}'
+```
+
+### Response
+
 ```json
 {
-  "answer": "For files in Germany, DOWNGRADED is the most common action with 6 occurrences...",
-  "sources": [
-    "SQL Database: csv_data_data"
-  ],
+  "answer": "There are 20 files with CLASSIFIED action...",
+  "sources": ["SQL Database: csv_data_data"],
   "documentsUsed": 1
 }
 ```
 
-### 2. Health Check
-
-**GET** `/api/chat/health`
-
-Returns: `"Chat service is running"`
-
-## How It Works
-
-### 1. Data Ingestion
-- CSV file is loaded at startup (async, idempotent)
-- Each row is embedded and stored in vector DB
-- Data is also stored in SQL DB for analytical queries
-
-### 2. Query Processing
-1. **User asks a question** via POST to `/api/chat`
-2. **Intent Classification**: LLM determines if query is factual or analytical
-3. **Factual**: Vector similarity search, retrieve top K documents
-4. **Analytical**: LLM generates SQL query, executes it, and returns results (with SQL query context)
-5. **Context Building**: Retrieved content or SQL results (with SQL query) are passed to the analytics prompt
-6. **LLM Processing**: Claude 3 Sonnet generates answer using analytics-prompt.txt
-7. **Response**: Answer and sources are returned
-
-## Analytical Query Flow
-- SQL query is generated from the user's question using a prompt file (no hardcoding)
-- The executed SQL query is included in the context sent to the LLM
-- The LLM is explicitly instructed (via analytics-prompt.txt) to use the SQL query and results, and to acknowledge any filters (e.g., WHERE location = 'Germany')
-- The question is **not** duplicated in the data context; it is passed separately
-
-## Example Analytical Response
-
-**Question:**
-> Which action ('DOWNGRADED', 'UPGRADED', or 'CLASSIFIED') is most common for files in the 'Germany' location?
-
-**AI Response:**
-```
-Executive Insight
-For files in the Germany location, DOWNGRADED is the most common action with 6 occurrences.
-
-What the Data Shows
-• DOWNGRADED: 6 files
-• UPGRADED: 2 files
-• CLASSIFIED: 2 files
-• (Results are filtered for Germany location as shown in the SQL query context)
-```
-
 ## Configuration
 
-### Vector Search Parameters
+### Environment Variables (.env)
+- `AWS_REGION`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` (required)
+- `CHATBOT_TOPK=3` (optional, number of similar documents to retrieve)
 
-Set in `application.yaml`:
-```yaml
-chatbot:
-  topk: 3  # Number of similar documents to retrieve
+### Application Settings (application.yaml)
+- `chatbot.sql.batch-size: 20` - Batch size for SQL inserts
+- `chatbot.ingest-on-startup: true` - Load CSV data on startup
+- `spring.ai.vectorstore.pgvector.remove-existing-vector-store-table: true` - Clean vector DB on startup
+
+### Custom CSV Data
+Replace `src/main/resources/docs/data.csv` with your CSV file. Schema is auto-generated from headers.
+
+## Performance
+
+- **Data Ingestion**: ~60 seconds for 100 rows (embedding generation time)
+- **Query Response**: 2-5 seconds depending on type
+- **Optimizations**:
+  - Async data loading (non-blocking startup)
+  - Batch SQL inserts (configurable batch size)
+  - Direct SQL generation (no LLM overhead for schema/inserts)
+  - Docker layer caching (dependencies cached separately)
+
+## Project Structure
+
+```
+data_insights_chatbot/
+├── .env.example              # Sample environment variables
+├── compose.yaml              # Docker Compose config
+├── Dockerfile                # Multi-stage build with distroless
+├── pom.xml                   # Maven dependencies
+├── src/main/
+│   ├── java/com/yash/chatbot_rag/
+│   │   ├── controller/       # REST API
+│   │   ├── service/          # RAG, SQL, Intent Classification
+│   │   ├── dto/              # Request/Response models
+│   │   └── config/           # AWS Bedrock config
+│   └── resources/
+│       ├── application.yaml  # App configuration
+│       ├── prompts/*.txt     # All LLM prompts
+│       ├── docs/data.csv     # Your data (replaceable)
+│       └── static/index.html # Chat UI
 ```
 
-### LLM Model
+## Key Services
 
-Set in `application.yaml` and `BedrockConfig.java`.
+- **IntentClassificationService**: Routes queries to vector search, SQL, or conversation
+- **RagService**: Orchestrates factual queries with vector similarity search
+- **AggregatedQueryService**: Generates and executes SQL for analytical queries
+- **SqlSchemaService**: Auto-generates schemas and inserts from CSV (with type inference)
+- **DataSummaryService**: Provides helpful suggestions when no data found
 
-### Prompt Files
-- All prompts (analytics, SQL generation, intent classification, etc.) are loaded from `.txt` files in `src/main/resources/prompts/`.
-- No hardcoded prompts in code.
+## Troubleshooting
 
-## Running the Application
+**Date Format Errors**: Automatically converted (DD/MM/YYYY → YYYY-MM-DD)
 
-1. Ensure Docker PostgreSQL is running
-2. Run Spring Boot application: `./mvnw spring-boot:run`
-3. Access the chat UI at `http://localhost:8080`
-4. Use the REST API as shown above
+**Build Too Slow**: Layer caching implemented - dependencies only rebuild when pom.xml changes
 
-## File Structure
+**Data Not Loading**: Check `chatbot.ingest-on-startup: true` in application.yaml
 
-```
-src/main/java/com/yash/chatbot_rag/
-├── controller/                # REST API endpoints
-├── service/                   # RAG, SQL, and prompt logic
-├── dto/                       # Request/Response DTOs
-├── BedrockConfig.java         # AWS Bedrock config
-├── CsvDataLoader.java         # Data ingestion
-└── ChatbotRagApplication.java # Main app
+**AWS Credentials**: Ensure `.env` file has correct credentials and Bedrock model access
 
-src/main/resources/
-├── prompts/                   # All prompt .txt files (no hardcoding)
-├── docs/data.csv              # Source data
-├── static/index.html          # Chat UI
-└── application.yaml           # Config
-```
+---
 
-## Success! 🎉
+**Built with Spring Boot 3.5, AWS Bedrock, PostgreSQL + pgvector**
 
-Your RAG chatbot now supports both factual and analytical queries, with:
-- ✅ Vector similarity search
-- ✅ Analytical SQL queries with context-aware answers
-- ✅ All prompts loaded from .txt files
-- ✅ REST API and chat UI
-- ✅ Source attribution for answers
 
-Enjoy your advanced RAG-powered chatbot!
+
+

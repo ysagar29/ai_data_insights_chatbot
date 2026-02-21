@@ -50,9 +50,12 @@ public class RagService {
         if (intent == QueryIntent.ANALYTICAL) {
             log.info("Processing ANALYTICAL query with SQL...");
             return handleAnalyticalQuery(question);
-        } else {
+        } else if (intent == QueryIntent.FACTUAL) {
             log.info("Processing FACTUAL query with RAG...");
             return handleFactualQuery(question);
+        } else {
+            log.info("Processing NONE (general conversation) query...");
+            return handleGeneralConversation(question);
         }
     }
 
@@ -157,6 +160,36 @@ public class RagService {
                 .sources(sources)
                 .documentsUsed(docs.size())
                 .build();
+    }
+
+    /**
+     * Handle general conversation (greetings, casual chat, etc.)
+     */
+    private ChatResponse handleGeneralConversation(String question) {
+        try {
+            log.info("Handling general conversation");
+
+            // Create a simple conversational prompt
+            String conversationPrompt = "You are a friendly AI chatbot assistant that helps analyze data. " +
+                    "The user is having a general conversation with you. Respond naturally and helpfully.\n\n" +
+                    "User: " + question;
+
+            Prompt prompt = new Prompt(conversationPrompt);
+            String answer = chatModel.call(prompt).getResult().getOutput().getText();
+
+            return ChatResponse.builder()
+                    .answer(answer)
+                    .sources(List.of("General Conversation"))
+                    .documentsUsed(0)
+                    .build();
+        } catch (Exception e) {
+            log.error("Error handling general conversation", e);
+            return ChatResponse.builder()
+                    .answer("Hello! I'm your data insights assistant. How can I help you analyze your data today?")
+                    .sources(List.of("General Conversation"))
+                    .documentsUsed(0)
+                    .build();
+        }
     }
 
     /**
